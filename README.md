@@ -12,9 +12,10 @@ Tools used:
 ## Table of contents
 
 1. [Advanced Locking and Semaphores](https://github.com/backstreetbrogrammer/33_AdvancedConcurrencyModule2#chapter-01-advanced-locking-and-semaphores)
-   - Lock pattern
-   - Condition
-   - Read-Write Locks
+    - [Lock pattern](https://github.com/backstreetbrogrammer/33_AdvancedConcurrencyModule2#lock-pattern)
+    - [Condition](https://github.com/backstreetbrogrammer/33_AdvancedConcurrencyModule2#condition)
+    - [Read-Write Locks](https://github.com/backstreetbrogrammer/33_AdvancedConcurrencyModule2#read-write-locks)
+    - [Semaphore Pattern](https://github.com/backstreetbrogrammer/33_AdvancedConcurrencyModule2#semaphore-pattern)
 2. [Using Barriers and Latches](https://github.com/backstreetbrogrammer/33_AdvancedConcurrencyModule2#chapter-02-using-barriers-and-latches)
 
 ---
@@ -409,6 +410,7 @@ Data in the buffer: 5
 
 #### Read-Write Locks
 
+#### Semaphore Pattern
 
 ---
 
