@@ -410,7 +410,433 @@ Data in the buffer: 5
 
 #### Read-Write Locks
 
+Imagine we have an application that **reads** and **writes** some resource, but **writing** is not done as much as
+**reading**.
+
+Multiple threads **reading** the same resource does not cause problems for each other, so multiple threads that want to
+**read** the resource are granted access at the same time, overlapping.
+
+But, if a single thread wants to **write** to the resource, no other **reads** nor **writes** must be in progress at the
+same time.
+
+To solve this problem of allowing **multiple readers** but **only one writer**, we will need a read / write lock.
+
+To summarize the conditions for getting read and write access to the resource:
+
+**Read Access** - If no threads are writing, and no threads have requested write access.
+
+**Write Access** - If no threads are reading or writing.
+
+**ReadWriteLock**
+
+`ReadWriteLock` is an interface with only two methods:
+
+```java
+public interface ReadWriteLock {
+    /**
+     * Returns the lock used for reading.
+     *
+     * @return the lock used for reading
+     */
+    Lock readLock();
+
+    /**
+     * Returns the lock used for writing.
+     *
+     * @return the lock used for writing
+     */
+    Lock writeLock();
+}
+```
+
+- Only **one thread** can hold the **write** lock
+- When the **write** lock is held, no one can hold the **read** lock
+- As many threads as needed can hold the **read** lock
+
+#### Interview Problem 2 (Barclays): Implement multi-threaded cache using Read-Write Locks
+
+Design a multi-threaded cache which will guarantee thread safe operations for `get()`, `put()` and `remove()` operations
+using Read-Write locks.
+
+**NOTE**: we can use Java `HashMap` and make it thread safe using `ReadWriteLock`. Same functionality can be done using
+`ConcurrentHashMap` but candidate should use `HashMap` for this problem.
+
+**Solution**:
+
+We can use `ReadWriteLock` to make all the map operations thread-safe.
+
+```java
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+
+public class MultiThreadedHashMap<K, V> {
+    private final Map<K, V> cache = new HashMap<>();
+
+    private final ReadWriteLock readWritelock = new ReentrantReadWriteLock();
+    private final Lock readLock = readWritelock.readLock();
+    private final Lock writeLock = readWritelock.writeLock();
+
+    // GET - guard with read lock
+    public V get(final K key) {
+        try {
+            readLock.lock();
+            return cache.get(key);
+        } finally {
+            readLock.unlock();
+        }
+    }
+
+    // PUT - guard with write lock
+    public V put(final K key, final V value) {
+        try {
+            writeLock.lock();
+            return cache.put(key, value);
+        } finally {
+            writeLock.unlock();
+        }
+    }
+
+    // REMOVE - guard with write lock
+    public V remove(final K key) {
+        try {
+            writeLock.lock();
+            return cache.remove(key);
+        } finally {
+            writeLock.unlock();
+        }
+    }
+
+}
+```
+
+Unit Test class:
+
+```java
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+
+public class MultiThreadedHashMapTest {
+
+    private MultiThreadedHashMap<String, Integer> cache;
+
+    @BeforeEach
+    void setUp() {
+        cache = new MultiThreadedHashMap<>();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"Rishi", "John", "Bob", "Malcolm", "Joshua"})
+    @DisplayName("Test put() and get() methods with one input at a time")
+    void testPutAndGetMethodsWithOneInputAtATime(final String input) {
+        cache.put(input, input.length());
+        final int value = cache.get(input);
+        assertEquals(input.length(), value);
+    }
+
+    @Test
+    @DisplayName("Test put() and get() methods with multiple inputs")
+    void testPutAndGetMethodsWithMultipleInputs() {
+        final String[] inputs = new String[]{"Rishi", "John", "Bob", "Malcolm", "Joshua"};
+        for (final String input : inputs) {
+            cache.put(input, input.length());
+            final int value = cache.get(input);
+            assertEquals(input.length(), value);
+        }
+        cache.put("Bob", 10);
+        assertEquals(10, cache.get("Bob"));
+    }
+
+    @Test
+    @DisplayName("Test put() and remove() methods with multiple inputs")
+    void testPutAndRemoveMethodsWithMultipleInputs() {
+        final String[] inputs = new String[]{"Rishi", "John", "Bob", "Malcolm", "Joshua", "Christy"};
+        for (final String input : inputs) {
+            cache.put(input, input.length());
+            final int value = cache.get(input);
+            assertEquals(input.length(), value);
+        }
+        cache.remove("Bob");
+        assertNull(cache.get("Bob"));
+    }
+
+    @Test
+    @DisplayName("Test remove() method from head in collided index")
+    void testRemoveMethodFromHead() {
+        final String[] inputs = new String[]{"Rishi", "John", "Bob", "Malcolm", "Joshua", "Christy"};
+        for (final String input : inputs) {
+            cache.put(input, input.length());
+            final int value = cache.get(input);
+            assertEquals(input.length(), value);
+        }
+        cache.remove("Christy");
+        assertNull(cache.get("Christy"));
+    }
+
+    @Test
+    @DisplayName("Test remove() method from tail in collided index")
+    void testRemoveMethodFromTail() {
+        final String[] inputs = new String[]{"Rishi", "John", "Bob", "Malcolm", "Joshua", "Christy"};
+        for (final String input : inputs) {
+            cache.put(input, input.length());
+            final int value = cache.get(input);
+            assertEquals(input.length(), value);
+        }
+        cache.remove("Rishi");
+        assertNull(cache.get("Rishi"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"Rishi", "John", "Bob", "Malcolm", "Joshua"})
+    @DisplayName("When parallel computation is applied on cache, then results are correct and consistent")
+    public void whenParallelComputationAppliedToCache_thenCorrectAndConsistentResults(final String input) throws Exception {
+        cache.put(input, input.length());
+        final List<Integer> sumList = parallelComputation(input, 1000);
+
+        assertEquals(1, sumList
+                .stream()
+                .distinct()
+                .count());
+
+        final long wrongResultCount = sumList
+                .stream()
+                .filter(num -> num != input.length())
+                .count();
+
+        assertEquals(0, wrongResultCount);
+    }
+
+    private List<Integer> parallelComputation(final String str,
+                                              final int executionTimes) throws InterruptedException {
+        final List<Integer> sumList = new CopyOnWriteArrayList<>();
+        for (int i = 0; i < executionTimes; i++) {
+            final ExecutorService executorService = Executors.newFixedThreadPool(4);
+            for (int j = 0; j < 10; j++) {
+                executorService.execute(() -> {
+                    for (int k = 0; k < 10; k++) {
+                        sumList.add(cache.get(str));
+                    }
+                });
+            }
+            executorService.shutdown();
+            executorService.awaitTermination(5, TimeUnit.SECONDS);
+            sumList.add(cache.get(str));
+        }
+        return sumList;
+    }
+
+}
+```
+
+#### Interview Problem 3 (Barclays): Implement custom Read-Write Lock
+
+Implement custom Read-Write lock which should be reentrant and thread safe.
+
+**Solution**:
+
+We will define an interface first.
+
+```java
+public interface JReadWriteLockI {
+
+    void lockRead() throws InterruptedException;
+
+    void unlockRead();
+
+    void lockWrite() throws InterruptedException;
+
+    void unlockWrite();
+
+}
+```
+
+We implement the interface as fully reentrant and thread safe read-write lock.
+
+```java
+import java.util.HashMap;
+import java.util.Map;
+
+public class JReadWriteLockFullyReentrant implements JReadWriteLockI {
+
+    private final Map<Thread, Integer> readingThreads = new HashMap<>();
+    private int writeAccesses;
+    private int writeRequests;
+    private Thread writingThread;
+
+    @Override
+    public synchronized void lockRead() throws InterruptedException {
+        final var callingThread = Thread.currentThread();
+        while (!canGrantReadAccess(callingThread)) {
+            wait();
+        }
+        readingThreads.merge(callingThread, 1, Integer::sum);
+    }
+
+    @Override
+    public synchronized void unlockRead() {
+        final var callingThread = Thread.currentThread();
+        final int accessCount = readingThreads.get(callingThread);
+        if (accessCount == 1) {
+            readingThreads.remove(callingThread);
+        } else {
+            readingThreads.put(callingThread, accessCount - 1);
+        }
+        notifyAll();
+    }
+
+    @Override
+    public synchronized void lockWrite() throws InterruptedException {
+        writeRequests++;
+        final var callingThread = Thread.currentThread();
+        final var readers = readingThreads.get(callingThread);
+        while (!canGrantWriteAccess(callingThread) || ((readers != null) && (readers > 0))) {
+            wait();
+        }
+        writeRequests--;
+        writeAccesses++;
+        writingThread = callingThread;
+    }
+
+    @Override
+    public synchronized void unlockWrite() {
+        writeAccesses--;
+        if (writeAccesses == 0) {
+            writingThread = null;
+        }
+        notifyAll();
+    }
+
+    private boolean canGrantWriteAccess(final Thread callingThread) {
+        if (readingThreads.size() == 1 && readingThreads.containsKey(callingThread)) return true;
+        return (writingThread == null) || (writingThread == callingThread);
+    }
+
+    private boolean canGrantReadAccess(final Thread callingThread) {
+        if ((writingThread == null) || (writingThread == callingThread)) return true;
+        if (readingThreads.containsKey(callingThread)) return true;
+        return writeRequests <= 0;
+    }
+
+}
+```
+
+Unit Test class:
+
+```java
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+import java.time.LocalDateTime;
+import java.util.concurrent.TimeUnit;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+public class JReadWriteLockTest {
+
+    private final JReadWriteLockI readWriteLock = new JReadWriteLockFullyReentrant();
+    private int counter = 0;
+
+    @Test
+    @DisplayName("Test ReadWriteLock implementations")
+    void testReadWriteLock() throws InterruptedException {
+        final var reader1 = getReaderThread("Reader1", readWriteLock);
+        final var reader2 = getReaderThread("Reader2", readWriteLock);
+        final var reader3 = getReaderThread("Reader3", readWriteLock);
+        final var reader4 = getReaderThread("Reader4", readWriteLock);
+        final var reader5 = getReaderThread("Reader5", readWriteLock);
+
+        final var writer1 = getWriterThread("Writer1", readWriteLock);
+        final var writer2 = getWriterThread("Writer2", readWriteLock);
+
+        reader1.start();
+        writer1.start();
+        reader2.start();
+        reader3.start();
+        writer2.start();
+        reader4.start();
+
+        TimeUnit.SECONDS.sleep(1L);
+
+        reader5.start();
+        assertEquals(2, counter);
+
+        System.out.println("--------------------\n");
+    }
+
+    private void incrementCounter(final JReadWriteLockI readWriteLock) throws InterruptedException {
+        readWriteLock.lockWrite();
+        try {
+            counter++;
+        } finally {
+            readWriteLock.unlockWrite();
+        }
+    }
+
+    private int getCounter(final JReadWriteLockI readWriteLock) throws InterruptedException {
+        readWriteLock.lockRead();
+        try {
+            return counter;
+        } finally {
+            readWriteLock.unlockRead();
+        }
+    }
+
+    private Thread getReaderThread(final String name, final JReadWriteLockI readWriteLock) {
+        return new Thread(() -> {
+            try {
+                final int counter = getCounter(readWriteLock);
+                System.out.printf("Time:[%s], Reader Thread: [%s], Counter: [%d]%n", LocalDateTime.now(),
+                                  Thread.currentThread().getName(), counter);
+            } catch (final InterruptedException e) {
+                e.printStackTrace();
+            }
+        }, name);
+    }
+
+    private Thread getWriterThread(final String name, final JReadWriteLockI readWriteLock) {
+        return new Thread(() -> {
+            try {
+                incrementCounter(readWriteLock);
+                System.out.printf("Time:[%s], Writer Thread: [%s]%n", LocalDateTime.now(),
+                                  Thread.currentThread().getName());
+            } catch (final InterruptedException e) {
+                e.printStackTrace();
+            }
+        }, name);
+    }
+}
+```
+
+Sample output:
+
+```
+Time:[2023-07-02T07:40:57.292520600], Reader Thread: [Reader1], Counter: [0]
+Time:[2023-07-02T07:40:57.301497100], Reader Thread: [Reader4], Counter: [0]
+Time:[2023-07-02T07:40:57.301497100], Writer Thread: [Writer2]
+Time:[2023-07-02T07:40:57.300499200], Reader Thread: [Reader2], Counter: [1]
+Time:[2023-07-02T07:40:57.299502300], Writer Thread: [Writer1]
+Time:[2023-07-02T07:40:57.299502300], Reader Thread: [Reader3], Counter: [2]
+Time:[2023-07-02T07:40:58.272740900], Reader Thread: [Reader5], Counter: [2]
+--------------------
+```
+
 #### Semaphore Pattern
+
+
 
 ---
 
