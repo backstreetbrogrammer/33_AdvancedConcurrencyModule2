@@ -1,42 +1,49 @@
-package com.backstreetbrogrammer.ch01_introduction.producerConsumer;
+package com.backstreetbrogrammer.ch01_locksSemaphores.producerConsumer;
 
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
-public class ProducerConsumerMain {
+public class ProducerConsumerUsingLocks {
 
-    private static final Object lock = new Object();
+    private static final Lock lock = new ReentrantLock();
+    private static final Condition notFull = lock.newCondition();
+    private static final Condition notEmpty = lock.newCondition();
 
     private static int[] buffer;
     private static int count;
 
     private static class Producer {
         void produce() {
-            synchronized (lock) {
+            try {
+                lock.lock();
                 while (isFull(buffer)) {
-                    try {
-                        lock.wait();
-                    } catch (final InterruptedException e) {
-                        e.printStackTrace();
-                    }
+                    notFull.await();
                 }
                 buffer[count++] = 1;
-                lock.notifyAll();
+                notEmpty.signalAll();
+            } catch (final InterruptedException e) {
+                e.printStackTrace();
+            } finally {
+                lock.unlock();
             }
         }
     }
 
     private static class Consumer {
         void consume() {
-            synchronized (lock) {
+            try {
+                lock.lock();
                 while (isEmpty()) {
-                    try {
-                        lock.wait();
-                    } catch (final InterruptedException e) {
-                        e.printStackTrace();
-                    }
+                    notEmpty.await();
                 }
                 buffer[--count] = 0;
-                lock.notifyAll();
+                notFull.signalAll();
+            } catch (final InterruptedException e) {
+                e.printStackTrace();
+            } finally {
+                lock.unlock();
             }
         }
     }
