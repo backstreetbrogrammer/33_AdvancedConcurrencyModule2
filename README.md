@@ -836,7 +836,253 @@ Time:[2023-07-02T07:40:58.272740900], Reader Thread: [Reader5], Counter: [2]
 
 #### Semaphore Pattern
 
+**Semaphore** is similar to **locks** but instead of allowing only **mutual exclusions** (one thread) - it can permit
+**several** threads to enter the **critical section**.
 
+```
+        final Semaphore semaphore = new Semaphore(5); // permits
+        try {
+            semaphore.acquire();
+            // guarded block of code
+        } catch (final InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            semaphore.release();
+        }
+```
+
+The `acquire()` call is **blocking** until a permit is available - at most 5 threads can execute the guarded code at the
+same time. By default, semaphore is **non-fair**.
+
+Semaphore can be created as **fair**
+
+```
+        final Semaphore semaphore = new Semaphore(5, true); // fair
+        try {
+            semaphore.acquire(2);
+            // guarded block of code
+        } catch (final InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            semaphore.release(2);
+        }
+```
+
+The `acquire()` can ask for more than one permit - then the `release()` call **MUST** release them all.
+
+By default, if a waiting thread is interrupted it will throw an `InterruptedException` - that's why we have a catch
+block to handle it.
+
+```
+        final Semaphore semaphore = new Semaphore(5); // permits
+        try {
+            semaphore.acquireUninterruptibly();
+            // guarded block of code
+        } finally {
+            semaphore.release();
+        }
+```
+
+**Uninterruptibility** means that the thread cannot be interrupted => it can be only be freed by calling its
+`release()` method.
+
+Similar to `tryLock()` in `Lock`, there is a timed version for `Semaphore` too:
+
+```
+        final Semaphore semaphore = new Semaphore(5); // permits
+        try {
+            if (semaphore.tryAcquire()) { // or, semaphore.tryAcquire(1, TimeUnit.SECONDS)
+                // guarded block of code
+            } else {
+                // do something else
+            }
+        } finally {
+            semaphore.release();
+        }
+```
+
+All of these methods can also request more than one permit and accordingly, must release it.
+
+**Handling Permits**
+
+One can reduce the number of permits (cannot increase it)
+
+**Waiting Threads**
+
+One can check the waiting threads:
+
+- are there any waiting threads?
+- how many threads are waiting?
+- get the collection of the waiting threads
+
+#### Interview Problem 4 (Morgan Stanley): Implement a bounded buffer using Semaphore
+
+Design a thread-safe bounded buffer using Semaphore.
+
+**Solution**:
+
+```java
+import java.util.Arrays;
+import java.util.concurrent.Semaphore;
+
+public class BoundedBuffer<E> {
+
+    private final Semaphore availableItems, availableSpaces;
+    private final E[] items;
+    private int putPosition = 0, takePosition = 0;
+
+    public BoundedBuffer(final int capacity) {
+        availableItems = new Semaphore(0);
+        availableSpaces = new Semaphore(capacity);
+        items = (E[]) new Object[capacity];
+    }
+
+    public boolean isEmpty() {
+        return availableItems.availablePermits() == 0;
+    }
+
+    public boolean isFull() {
+        return availableSpaces.availablePermits() == 0;
+    }
+
+    public E[] getItems() {
+        return Arrays.copyOf(items, items.length);
+    }
+
+    public int capacity() {
+        return items.length;
+    }
+
+    public int size() {
+        int count = 0;
+        for (final E item : items) {
+            if (item != null) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    public void put(final E item) throws InterruptedException {
+        availableSpaces.acquire();
+        doInsert(item);
+        availableItems.release();
+    }
+
+    public E take() throws InterruptedException {
+        availableItems.acquire();
+        final E item = doExtract();
+        availableSpaces.release();
+        return item;
+    }
+
+    private synchronized void doInsert(final E item) {
+        int i = putPosition;
+        items[i] = item;
+        putPosition = (++i == items.length) ? 0 : i;
+    }
+
+    private synchronized E doExtract() {
+        int i = takePosition;
+        final E item = items[i];
+        items[i] = null;
+        takePosition = (++i == items.length) ? 0 : i;
+        return item;
+    }
+
+}
+```
+
+Unit Test:
+
+```java
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+public class BoundedBufferTest {
+
+    private BoundedBuffer<Integer> buffer;
+
+    @BeforeEach
+    void setUp() {
+        buffer = new BoundedBuffer<>(5);
+    }
+
+    @Test
+    @DisplayName("Test buffer is empty when constructed")
+    void testBufferIsEmptyWhenConstructed() {
+        assertTrue(buffer.isEmpty());
+        assertFalse(buffer.isFull());
+    }
+
+    @Test
+    @DisplayName("Test buffer is full after all puts")
+    void testBufferIsFullAfterPuts() throws InterruptedException {
+        for (int i = 0; i < buffer.capacity(); i++) {
+            buffer.put(i);
+        }
+        assertTrue(buffer.isFull());
+        assertFalse(buffer.isEmpty());
+    }
+
+    @Test
+    @DisplayName("Test buffer is full after all puts and then empty after all takes")
+    void testBufferIsFullAfterPutsAndIsEmptyAfterTakes() throws InterruptedException {
+        for (int i = 0; i < buffer.capacity(); i++) {
+            buffer.put(i);
+        }
+        assertTrue(buffer.isFull());
+        assertFalse(buffer.isEmpty());
+
+        for (int i = 0; i < buffer.capacity(); i++) {
+            assertEquals(i, buffer.take());
+        }
+        assertTrue(buffer.isEmpty());
+        assertFalse(buffer.isFull());
+    }
+
+    @Test
+    @DisplayName("Test multithreaded puts and takes")
+    void testMultiThreadedPutsAndTakes() throws InterruptedException {
+        final int putMax = 10;
+        final int takeMax = 7;
+        CompletableFuture.runAsync(() -> {
+            for (int i = 0; i < putMax; i++) {
+                try {
+                    buffer.put(i);
+                } catch (final InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+        });
+        CompletableFuture.runAsync(() -> {
+            for (int i = 0; i < takeMax; i++) {
+                try {
+                    buffer.take();
+                } catch (final InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+        });
+        TimeUnit.SECONDS.sleep(2L);
+
+        assertFalse(buffer.isEmpty());
+        assertFalse(buffer.isFull());
+        assertEquals(putMax - takeMax, buffer.size());
+
+        for (int i = takeMax; i < putMax; i++) {
+            assertEquals(i, buffer.take());
+        }
+    }
+
+}
+```
 
 ---
 
