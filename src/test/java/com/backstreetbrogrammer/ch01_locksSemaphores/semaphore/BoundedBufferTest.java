@@ -56,6 +56,7 @@ public class BoundedBufferTest {
     void testMultiThreadedPutsAndTakes() throws InterruptedException {
         final int putMax = 10;
         final int takeMax = 7;
+
         CompletableFuture.runAsync(() -> {
             for (int i = 0; i < putMax; i++) {
                 try {
@@ -65,6 +66,7 @@ public class BoundedBufferTest {
                 }
             }
         });
+
         CompletableFuture.runAsync(() -> {
             for (int i = 0; i < takeMax; i++) {
                 try {
@@ -74,6 +76,7 @@ public class BoundedBufferTest {
                 }
             }
         });
+        
         TimeUnit.SECONDS.sleep(2L);
 
         assertFalse(buffer.isEmpty());

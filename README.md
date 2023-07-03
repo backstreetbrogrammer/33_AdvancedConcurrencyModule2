@@ -17,6 +17,8 @@ Tools used:
     - [Read-Write Locks](https://github.com/backstreetbrogrammer/33_AdvancedConcurrencyModule2#read-write-locks)
     - [Semaphore Pattern](https://github.com/backstreetbrogrammer/33_AdvancedConcurrencyModule2#semaphore-pattern)
 2. [Using Barriers and Latches](https://github.com/backstreetbrogrammer/33_AdvancedConcurrencyModule2#chapter-02-using-barriers-and-latches)
+    - [Barriers](https://github.com/backstreetbrogrammer/33_AdvancedConcurrencyModule2#barriers)
+    - [Latches](https://github.com/backstreetbrogrammer/33_AdvancedConcurrencyModule2#latches)
 
 ---
 
@@ -288,6 +290,7 @@ Based on all this, here is our final version of Producer-Consumer Pattern using 
 
 ```java
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -306,11 +309,13 @@ public class ProducerConsumerUsingLocks {
             try {
                 lock.lock();
                 while (isFull(buffer)) {
-                    notFull.await();
+                    if (!notFull.await(10, TimeUnit.MILLISECONDS)) {
+                        throw new TimeoutException("Producer time out!");
+                    }
                 }
                 buffer[count++] = 1;
                 notEmpty.signalAll();
-            } catch (final InterruptedException e) {
+            } catch (final InterruptedException | TimeoutException e) {
                 e.printStackTrace();
             } finally {
                 lock.unlock();
@@ -323,11 +328,13 @@ public class ProducerConsumerUsingLocks {
             try {
                 lock.lock();
                 while (isEmpty()) {
-                    notEmpty.await();
+                    if (!notEmpty.await(10, TimeUnit.MILLISECONDS)) {
+                        throw new TimeoutException("Consumer time out!");
+                    }
                 }
                 buffer[--count] = 0;
                 notFull.signalAll();
-            } catch (final InterruptedException e) {
+            } catch (final InterruptedException | TimeoutException e) {
                 e.printStackTrace();
             } finally {
                 lock.unlock();
@@ -1052,6 +1059,7 @@ public class BoundedBufferTest {
     void testMultiThreadedPutsAndTakes() throws InterruptedException {
         final int putMax = 10;
         final int takeMax = 7;
+
         CompletableFuture.runAsync(() -> {
             for (int i = 0; i < putMax; i++) {
                 try {
@@ -1061,6 +1069,7 @@ public class BoundedBufferTest {
                 }
             }
         });
+
         CompletableFuture.runAsync(() -> {
             for (int i = 0; i < takeMax; i++) {
                 try {
@@ -1070,6 +1079,7 @@ public class BoundedBufferTest {
                 }
             }
         });
+
         TimeUnit.SECONDS.sleep(2L);
 
         assertFalse(buffer.isEmpty());
@@ -1087,5 +1097,13 @@ public class BoundedBufferTest {
 ---
 
 ### Chapter 02. Using Barriers and Latches
+
+**Barrier**: to have several tasks wait for each other.
+
+**Latch**: to count down operations and let a task start.
+
+#### Barriers
+
+#### Latches
 
 ---

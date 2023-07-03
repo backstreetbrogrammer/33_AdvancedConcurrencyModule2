@@ -1,6 +1,7 @@
 package com.backstreetbrogrammer.ch01_locksSemaphores.producerConsumer;
 
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -19,11 +20,13 @@ public class ProducerConsumerUsingLocks {
             try {
                 lock.lock();
                 while (isFull(buffer)) {
-                    notFull.await();
+                    if (!notFull.await(10, TimeUnit.MILLISECONDS)) {
+                        throw new TimeoutException("Producer time out!");
+                    }
                 }
                 buffer[count++] = 1;
                 notEmpty.signalAll();
-            } catch (final InterruptedException e) {
+            } catch (final InterruptedException | TimeoutException e) {
                 e.printStackTrace();
             } finally {
                 lock.unlock();
@@ -36,11 +39,13 @@ public class ProducerConsumerUsingLocks {
             try {
                 lock.lock();
                 while (isEmpty()) {
-                    notEmpty.await();
+                    if (!notEmpty.await(10, TimeUnit.MILLISECONDS)) {
+                        throw new TimeoutException("Consumer time out!");
+                    }
                 }
                 buffer[--count] = 0;
                 notFull.signalAll();
-            } catch (final InterruptedException e) {
+            } catch (final InterruptedException | TimeoutException e) {
                 e.printStackTrace();
             } finally {
                 lock.unlock();
