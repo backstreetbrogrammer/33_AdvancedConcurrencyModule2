@@ -209,6 +209,8 @@ executed first.
 In the basic concurrency module, we learnt how to implement Producer-Consumer pattern using `wait()`, `notify()`
 and `notifyAll()` methods.
 
+![ProducerConsumer](ProducerConsumer.PNG)
+
 Just to revise:
 
 ```java
@@ -846,6 +848,8 @@ Time:[2023-07-02T07:40:58.272740900], Reader Thread: [Reader5], Counter: [2]
 **Semaphore** is similar to **locks** but instead of allowing only **mutual exclusions** (one thread) - it can permit
 **several** threads to enter the **critical section**.
 
+![Semaphore](Semaphore.PNG)
+
 ```
         final Semaphore semaphore = new Semaphore(5); // permits
         try {
@@ -1103,6 +1107,162 @@ public class BoundedBufferTest {
 **Latch**: to count down operations and let a task start.
 
 #### Barriers
+
+`CyclicBarriers` are used in programs in which we have a fixed number of threads that must wait for each other to reach
+a common point before continuing execution.
+
+The barrier is called **cyclic** because it can be re-used after the waiting threads are released.
+
+Barriers help to solve a problem statement as such:
+
+- We need a given computation to be shared among a fixed number of threads
+- Each thread is given a subtask
+- When all the threads are done, then only the main thread and worker threads will continue (merging operation may be
+  run)
+
+![CyclicBarrier](CyclicBarrier.PNG)
+
+#### Interview Problem 5 (Goldman Sachs): Finding prime numbers using multiple threads
+
+Design the algorithm to find prime numbers over a range of numbers using multiple threads.
+
+**Solution**
+
+We can use multiple threads (based on number of CPU cores) to find prime numbers ove a sub-range of given numbers.
+
+Once all the threads have completed -> we can combine the result.
+
+First task is to write an algorithm to find prime numbers.
+
+**Finding Prime Numbers**
+
+1. Brute Force approach
+
+```
+    // O(n^2)
+    public static List<Integer> primeNumbersBruteForce(final int n) {
+        final List<Integer> primeNumbers = new LinkedList<>();
+        if (n >= 2) {
+            primeNumbers.add(2);
+        }
+        for (int i = 3; i <= n; i += 2) {
+            if (isPrimeBruteForce(i)) {
+                primeNumbers.add(i);
+            }
+        }
+        return primeNumbers;
+    }
+
+    private static boolean isPrimeBruteForce(final int number) {
+        for (int i = 2; i * i <= number; i++) {
+            if (number % i == 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+```
+
+Test case:
+
+```
+    @Test
+    void testPrimeNumbersBruteForce() {
+        System.out.println(primeNumbersBruteForce(30));
+    }
+```
+
+Output:
+
+```
+[2, 3, 5, 7, 11, 13, 17, 19, 23, 29]
+```
+
+2. Using Java Streams
+
+```
+    // O(n^2)
+    public static List<Integer> primeNumbersUsingStreams(final int n) {
+        return IntStream.rangeClosed(2, n)
+                        .filter(FindPrimeNumbers::isPrime).boxed()
+                        .collect(Collectors.toList());
+    }
+
+    private static boolean isPrime(final int number) {
+        return IntStream.rangeClosed(2, (int) (Math.sqrt(number)))
+                        .allMatch(n -> number % n != 0);
+    }
+```
+
+Test case:
+
+```
+    @Test
+    void testPrimeNumbersUsingStreams() {
+        System.out.println(primeNumbersUsingStreams(30));
+    }
+```
+
+Output:
+
+```
+[2, 3, 5, 7, 11, 13, 17, 19, 23, 29]
+```
+
+3. Using Sieve Of Eratosthenes algorithm
+
+```
+    // O(n*log n)
+    public static List<Integer> sieveOfEratosthenes(final int n) {
+        final boolean[] prime = new boolean[n + 1];
+        Arrays.fill(prime, true);
+        for (int p = 2; p * p <= n; p++) {
+            if (prime[p]) {
+                for (int i = p * 2; i <= n; i += p) {
+                    prime[i] = false;
+                }
+            }
+        }
+        final List<Integer> primeNumbers = new LinkedList<>();
+        for (int i = 2; i <= n; i++) {
+            if (prime[i]) {
+                primeNumbers.add(i);
+            }
+        }
+        return primeNumbers;
+    }
+```
+
+Test case:
+
+```
+    @Test
+    void testPrimeNumbersUsingSieveOfEratosthenes() {
+        System.out.println(sieveOfEratosthenes(30));
+    }
+```
+
+Output:
+
+```
+[2, 3, 5, 7, 11, 13, 17, 19, 23, 29]
+```
+
+![SieveOfEratosthenes](SieveOfEratosthenes.PNG)
+
+Consider the image above, here are the passes made by the algorithm:
+
+- The loop starts with 2, so we leave 2 unmarked and mark all the divisors of 2. It's marked in image with the red color
+- The loop moves to 3, so we leave 3 unmarked and mark all the divisors of 3 not already marked. It's marked in image
+  with the green color
+- Loop moves to 4, it's already marked, so we continue
+- Loop moves to 5, so we leave 5 unmarked and mark all the divisors of 5 not already marked. It's marked in image with
+  the purple color
+- We continue above steps until loop is reached equal to square root of n
+
+Now as we know how to find prime numbers, we will improve the design to use barriers.
+
+**Using Cyclic Barrier**
 
 #### Latches
 
