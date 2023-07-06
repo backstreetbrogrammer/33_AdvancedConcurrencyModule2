@@ -1259,10 +1259,122 @@ Consider the image above, here are the passes made by the algorithm:
 - Loop moves to 5, so we leave 5 unmarked and mark all the divisors of 5 not already marked. It's marked in image with
   the purple color
 - We continue above steps until loop is reached equal to square root of n
+- All the unmarked numbers from 2 to n are prime numbers
 
 Now as we know how to find prime numbers, we will improve the design to use barriers.
 
 **Using Cyclic Barrier**
+
+```java
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.*;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
+
+public class CyclicBarrierDemo {
+
+    private static List<Integer> findPrimes(final List<Integer> nList) {
+        if (nList == null || nList.isEmpty()) throw new IllegalArgumentException();
+
+        final List<Integer> result = new ArrayList<>();
+        for (final int num : nList) {
+            if (isPrime(num)) {
+                result.add(num);
+            }
+        }
+        return result;
+    }
+
+    private static boolean isPrime(final int number) {
+        return IntStream.rangeClosed(2, (int) (Math.sqrt(number)))
+                        .allMatch(n -> number % n != 0);
+    }
+
+    private static List<Integer> generateList(final int low, final int high) {
+        return Stream.iterate(low, n -> n + 1)
+                     .limit(high)
+                     .collect(Collectors.toList());
+    }
+
+    public static void main(final String[] args) {
+
+        class PrimeNumbersFinder implements Callable<List<Integer>> {
+            private final CyclicBarrier barrier;
+            private final List<Integer> inputList;
+
+            public PrimeNumbersFinder(final CyclicBarrier barrier, final List<Integer> inputList) {
+                this.barrier = barrier;
+                this.inputList = inputList;
+            }
+
+            public List<Integer> call() {
+                final List<Integer> result = findPrimes(inputList);
+                try {
+                    System.out.printf("[%s] Just arrived for input list %s, waiting for the others...%n",
+                                      Thread.currentThread().getName(), inputList);
+                    barrier.await();
+                    System.out.printf("[%s] Done waiting, return the result now %s%n",
+                                      Thread.currentThread().getName(), result);
+                } catch (final InterruptedException | BrokenBarrierException e) {
+                    e.printStackTrace();
+                }
+                return result;
+            }
+        }
+
+        final CyclicBarrier barrier = new CyclicBarrier(4, () -> System.out.printf("%nBarrier opening%n%n"));
+        final ExecutorService executorService = Executors.newFixedThreadPool(barrier.getParties());
+
+        final List<Future<List<Integer>>> futures = new ArrayList<>();
+        try {
+            int low = 1;
+            for (int i = 1; i <= barrier.getParties(); i++) {
+                final PrimeNumbersFinder primeNumbersFinder = new PrimeNumbersFinder(barrier, generateList(low, 10));
+                futures.add(executorService.submit(primeNumbersFinder));
+                low = (10 * i) + 1;
+            }
+
+            final List<Integer> result = new ArrayList<>();
+            futures.forEach(
+                    future -> {
+                        try {
+                            result.addAll(future.get(200L, TimeUnit.MILLISECONDS));
+                        } catch (final InterruptedException | ExecutionException e) {
+                            System.out.println(e.getMessage());
+                        } catch (final TimeoutException e) {
+                            System.out.println("Timed out");
+                            future.cancel(true);
+                        }
+                    });
+
+            System.out.printf("%nFinal result: %s%n", result);
+        } finally {
+            executorService.shutdown();
+        }
+    }
+
+}
+```
+
+Sample output:
+
+```
+[pool-1-thread-1] Just arrived for input list [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], waiting for the others...
+[pool-1-thread-4] Just arrived for input list [31, 32, 33, 34, 35, 36, 37, 38, 39, 40], waiting for the others...
+[pool-1-thread-3] Just arrived for input list [21, 22, 23, 24, 25, 26, 27, 28, 29, 30], waiting for the others...
+[pool-1-thread-2] Just arrived for input list [11, 12, 13, 14, 15, 16, 17, 18, 19, 20], waiting for the others...
+
+Barrier opening
+
+[pool-1-thread-2] Done waiting, return the result now [11, 13, 17, 19]
+[pool-1-thread-4] Done waiting, return the result now [31, 37]
+[pool-1-thread-1] Done waiting, return the result now [1, 2, 3, 5, 7]
+[pool-1-thread-3] Done waiting, return the result now [23, 29]
+
+Final result: [1, 2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37]
+```
 
 #### Latches
 
