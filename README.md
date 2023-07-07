@@ -1122,6 +1122,20 @@ Barriers help to solve a problem statement as such:
 
 ![CyclicBarrier](CyclicBarrier.PNG)
 
+The `await()` call is blocking and it has 2 overloaded versions:
+
+- `await()`
+- `await(time, TimeUnit)`
+
+Once opened a barrier => it is normally reset.
+
+The `reset()` method resets the barrier exceptionally, causing the waiting tasks to throw a `BrokenBarrierException`.
+
+A `BrokenBarrierException` is raised if:
+
+- a thread is **interrupted** while waiting
+- the barrier is **reset** while some threads are waiting
+
 #### Interview Problem 5 (Goldman Sachs): Finding prime numbers using multiple threads
 
 Design the algorithm to find prime numbers over a range of numbers using multiple threads.
@@ -1377,5 +1391,165 @@ Final result: [1, 2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37]
 ```
 
 #### Latches
+
+A `Latch` is a construct that a thread (mostly the `main` thread) waits on while other threads count down on the latch
+until it reaches zero.
+
+Once the count is down to zero -> then the waiting thread (or `main` thread) will continue to run.
+
+This is very similar to calling `join()` method on worker threads, but it has more flexible methods to use.
+
+![CountDownLatch](CountDownLatch.PNG)
+
+#### Interview Problem 6 (Barclays): Demonstrate CountDownLatch usage
+
+**Problem statement**:
+
+- We need to start our OMS (Order Management System) application before the exchange opens
+- An `AuthenticationService`, a `DataService` (static data and market data) and an `OrderService` needs to be
+  initialized first
+- Before serving clients and start receiving trading orders, our OMS application needs to make sure that several
+  resources are properly **initialized**
+
+Once all the services are available and our application starts, we do not want the **barrier** to reset, thus blocking
+everything!
+
+Instead, we need a kind of **barrier** that, once opened, cannot be closed => this is the **countdown latch**.
+
+**Solution**:
+
+Simple class of `Service` as `Thread`
+
+```java
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+
+public class Service extends Thread {
+
+    private final int delay;
+    private final CountDownLatch latch;
+
+    public Service(final String name, final int delay, final CountDownLatch latch) {
+        super.setName(name);
+        this.delay = delay;
+        this.latch = latch;
+    }
+
+    @Override
+    public void run() {
+        try {
+            TimeUnit.MILLISECONDS.sleep(delay);
+            latch.countDown();
+            System.out.printf("%s initialized%n", Thread.currentThread().getName());
+        } catch (final InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
+}
+```
+
+OMS demo class:
+
+```java
+import java.util.concurrent.CountDownLatch;
+
+public class OrderManagementSystem {
+
+    public static void main(final String[] args) throws InterruptedException {
+        final CountDownLatch latch = new CountDownLatch(3);
+
+        final Service authenticationService = new Service("AuthenticationService", 1000, latch);
+        final Service dataService = new Service("DataService", 2000, latch);
+        final Service orderService = new Service("OrderService", 3000, latch);
+
+        authenticationService.start();
+        dataService.start();
+        orderService.start();
+
+        latch.await();
+
+        System.out.printf("%nAll the services are initialized now... %nLets start the OMS in main thread [%s]%n",
+                          Thread.currentThread().getName());
+
+    }
+
+}
+```
+
+Sample output:
+
+```
+AuthenticationService initialized
+DataService initialized
+OrderService initialized
+
+All the services are initialized now... 
+Lets start the OMS in main thread [main]
+```
+
+**Differences between CountDownLatch And CyclicBarrier**
+
+`CountDownLatch` is a thread waiting for multiple threads to finish or calling `countDown()`. When all threads have
+called `countDown()`, the awaiting thread continues to execute.
+
+`CyclicBarrier` is when different threads hang tight for one another (**wait** for each other) and when all have
+finished their execution, the result needs to be combined in the parent thread.
+
+`CyclicBarrier` allows a number of **threads** to wait on each other, whereas `CountDownLatch` allows one or more
+threads to wait for a number of **tasks** to complete => `CyclicBarrier` maintains a count of **threads** whereas
+`CountDownLatch` maintains a count of **tasks**.
+
+Let's take example of `CountDownLatch`
+
+```
+    @Test
+    void testLatch() throws InterruptedException {
+        final CountDownLatch countDownLatch = new CountDownLatch(2);
+        
+        final Thread t = new Thread(() -> {
+            countDownLatch.countDown();
+            countDownLatch.countDown();
+        });
+        t.start();
+        
+        countDownLatch.await(); // blocking
+
+        assertEquals(0, countDownLatch.getCount());
+    }
+```
+
+Once the latch reaches zero, the call to `await` returns.
+
+Note that in this case, we were able to have the **same thread** decrease the count twice.
+
+Similar example for `CyclicBarrier`:
+
+```
+    @Test
+    void testBarrier() {
+        final CyclicBarrier cyclicBarrier = new CyclicBarrier(2);
+        final Thread t = new Thread(() -> {
+            try {
+                cyclicBarrier.await();
+                cyclicBarrier.await();
+            } catch (final InterruptedException | BrokenBarrierException e) {
+                // error handling
+            }
+        });
+        t.start();
+
+        assertFalse(cyclicBarrier.isBroken());
+    }
+```
+
+The threads that are waiting are themselves the barrier.
+
+The second `await()` is useless. A single thread **can't** count down a barrier twice.
+
+As Thread `t` must wait for another thread to call `await()` – to bring the count to two – `t‘s` second call to
+`await()` won't actually be invoked until the barrier is already broken!
+
+In our test, the barrier hasn't been crossed or broken because we only have one thread waiting and not the two threads
+that would be required for the barrier to be tripped. The `cyclicBarrier.isBroken()` method returns `false`.
 
 ---
